@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/story_service.dart';
 import '../models/story.dart';
 import '../widgets/shared_map.dart';
+import 'dart:convert';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -22,6 +23,7 @@ class _MapScreenState extends State<MapScreen> {
         builder: (context, storyService, child) {
           final stories = storyService.publishedStories;
           return SharedMap(
+            stories: stories,
             onStoryTap: (story) {
               _showStoryDetails(story);
             },
@@ -52,12 +54,19 @@ class _MapScreenState extends State<MapScreen> {
             if (story.pages.isNotEmpty) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  story.pages.first.imageUrl,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
+                child: story.pages.first.imageUrl.startsWith('data:image')
+                    ? Image.memory(
+                        base64Decode(story.pages.first.imageUrl.split(',')[1]),
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      )
+                    : Image.network(
+                        story.pages.first.imageUrl,
+                        height: 200,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
               ),
             ],
             const SizedBox(height: 8),

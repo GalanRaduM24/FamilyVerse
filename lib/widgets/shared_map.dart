@@ -10,6 +10,7 @@ class SharedMap extends StatefulWidget {
   final Function(Story)? onStoryTap;
   final double initialZoom;
   final bool showControls;
+  final List<Story> stories;
 
   const SharedMap({
     super.key,
@@ -17,6 +18,7 @@ class SharedMap extends StatefulWidget {
     this.onStoryTap,
     this.initialZoom = 15.0,
     this.showControls = true,
+    required this.stories,
   });
 
   @override
@@ -33,11 +35,20 @@ class _SharedMapState extends State<SharedMap> {
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _updateMarkers();
   }
 
-  void updateMarkers(List<Story> stories) {
+  @override
+  void didUpdateWidget(SharedMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stories != widget.stories) {
+      _updateMarkers();
+    }
+  }
+
+  void _updateMarkers() {
     setState(() {
-      _markers = stories.where((story) => story.latitude != null && story.longitude != null).map((story) {
+      _markers = widget.stories.where((story) => story.latitude != null && story.longitude != null).map((story) {
         return Marker(
           point: LatLng(story.latitude!, story.longitude!),
           width: widget.isWidget ? 20 : 40,
@@ -59,7 +70,7 @@ class _SharedMapState extends State<SharedMap> {
 
       // Update nearby stories count in widget
       if (_currentPosition != null) {
-        final nearbyStories = stories.where((story) {
+        final nearbyStories = widget.stories.where((story) {
           if (story.latitude == null || story.longitude == null) return false;
           final storyLocation = LatLng(story.latitude!, story.longitude!);
           final distance = const Distance().distance(_currentPosition!, storyLocation);

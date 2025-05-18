@@ -4,6 +4,7 @@ import '../services/story_service.dart';
 import 'package:provider/provider.dart';
 import 'story_detail_screen.dart';
 import '../main.dart';
+import 'dart:convert';
 
 class AlbumScreen extends StatelessWidget {
   const AlbumScreen({super.key});
@@ -93,18 +94,33 @@ class AlbumScreen extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              story.pages.first.imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey[200],
-                                  child: const Center(
-                                    child: Icon(Icons.error_outline, size: 50),
+                            story.pages.first.imageUrl.startsWith('data:image')
+                                ? Image.memory(
+                                    base64Decode(story.pages.first.imageUrl.split(',')[1]),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      print('Error loading image: $error');
+                                      return Container(
+                                        color: Colors.grey[200],
+                                        child: const Center(
+                                          child: Icon(Icons.error_outline, size: 50),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Image.network(
+                                    story.pages.first.imageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      print('Error loading image: $error');
+                                      return Container(
+                                        color: Colors.grey[200],
+                                        child: const Center(
+                                          child: Icon(Icons.error_outline, size: 50),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                            ),
                             // Style badge
                             Positioned(
                               top: 8,

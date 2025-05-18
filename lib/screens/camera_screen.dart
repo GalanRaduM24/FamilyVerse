@@ -3,9 +3,11 @@ import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/story.dart';
 import '../services/comic_generator_service.dart';
+import '../services/story_service.dart';
 import 'dart:io';
 import 'story_detail_screen.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -15,11 +17,8 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
-  CameraController? _frontController;
-  CameraController? _backController;
+  CameraController? _cameraController;
   bool _isInitialized = false;
-  bool _isFrontCameraInitialized = false;
-  bool _isBackCameraInitialized = false;
   bool _isFrontCameraActive = false;
   final _promptController = TextEditingController();
   ComicStyle _selectedStyle = ComicStyle.marvel;
@@ -30,6 +29,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   int _countdownValue = 3;
   String _processingMessage = '';
   final _comicGenerator = ComicGeneratorService();
+  List<CameraDescription>? _cameras;
 
   @override
   void initState() {
@@ -41,93 +41,80 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive) {
-      _disposeCameras();
+      _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
       _initializeCameras();
     }
   }
 
   Future<void> _initializeCameras() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
+    _cameras = await availableCameras();
+    if (_cameras == null || _cameras!.isEmpty) return;
 
-    // Initialize front camera
-    final frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
+    // Start with back camera
+    await _switchCamera(false);
+  }
+
+  Future<void> _disposeCamera() async {
+    try {
+      if (_cameraController != null) {
+        await _cameraController!.stopImageStream();
+        await _cameraController!.dispose();
+        _cameraController = null;
+      }
+    } catch (e) {
+      debugPrint('Error disposing camera: $e');
+    }
+  }
+
+  Future<void> _switchCamera(bool toFront) async {
+    if (toFront == _isFrontCameraActive && _cameraController != null) return;
+
+    // Dispose current camera
+    await _disposeCamera();
+
+    if (_cameras == null || _cameras!.isEmpty) return;
+
+    // Get the appropriate camera
+    final camera = _cameras!.firstWhere(
+      (camera) => toFront 
+        ? camera.lensDirection == CameraLensDirection.front
+        : camera.lensDirection == CameraLensDirection.back,
+      orElse: () => _cameras!.first,
     );
-    _frontController = CameraController(
-      frontCamera,
+
+    // Initialize new camera
+    _cameraController = CameraController(
+      camera,
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
 
-    // Initialize back camera
-    final backCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
-    _backController = CameraController(
-      backCamera,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-
     try {
-      await _frontController?.initialize();
+      await _cameraController!.initialize();
       if (mounted) {
         setState(() {
-          _isFrontCameraInitialized = true;
+          _isFrontCameraActive = toFront;
+          _isInitialized = true;
         });
       }
     } catch (e) {
-      debugPrint('Error initializing front camera: $e');
-    }
-
-    try {
-      await _backController?.initialize();
+      debugPrint('Error initializing camera: $e');
       if (mounted) {
         setState(() {
-          _isBackCameraInitialized = true;
+          _isInitialized = false;
         });
       }
-    } catch (e) {
-      debugPrint('Error initializing back camera: $e');
-    }
-
-    if (_isFrontCameraInitialized && _isBackCameraInitialized && mounted) {
-      setState(() {
-        _isInitialized = true;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _disposeCameras();
-    _promptController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _disposeCameras() async {
-    try {
-      await _frontController?.dispose();
-      await _backController?.dispose();
-    } catch (e) {
-      debugPrint('Error disposing cameras: $e');
     }
   }
 
   Future<void> _handleBeRealCapture() async {
-    if (_isCapturing) return;
+    if (_isCapturing || !_isInitialized || _cameraController == null) return;
     setState(() {
       _isCapturing = true;
       _showBeRealCountdown = true;
       _countdownValue = 3;
-      _isFrontCameraActive = false;  // Start with back camera
     });
 
     // Start countdown
@@ -144,10 +131,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     });
 
     try {
-      // Ensure back camera is ready
-      if (!_isBackCameraInitialized || _backController == null) {
-        throw Exception('Back camera not initialized');
-      }
+      // Ensure we start with back camera
+      await _switchCamera(false);
 
       // Capture back camera first
       if (!mounted) return;
@@ -156,7 +141,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         _processingMessage = 'Capturing back camera...';
       });
 
-      final XFile? backImage = await _backController!.takePicture();
+      final XFile? backImage = await _cameraController!.takePicture();
       if (backImage == null) {
         throw Exception('Failed to capture back camera image');
       }
@@ -164,21 +149,11 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       // Switch to front camera
       setState(() {
         _processingMessage = 'Switching to front camera...';
-        _isFrontCameraActive = true;
       });
+      await _switchCamera(true);
 
       // Wait for front camera to be ready
-      if (!_isFrontCameraInitialized || _frontController == null) {
-        throw Exception('Front camera not initialized');
-      }
-
-      // Wait longer for camera to stabilize
       await Future.delayed(const Duration(seconds: 2));
-
-      // Additional check to ensure front camera is ready
-      if (!_frontController!.value.isInitialized) {
-        throw Exception('Front camera not ready');
-      }
 
       // Update processing message
       if (!mounted) return;
@@ -187,24 +162,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       });
 
       // Take front camera picture
-      final XFile? frontImage = await _frontController!.takePicture();
+      final XFile? frontImage = await _cameraController!.takePicture();
       if (frontImage == null) {
         throw Exception('Failed to capture front camera image');
       }
 
-      // Notify widget that pictures were taken
-      const platform = MethodChannel('com.example.familyverse/widget');
-      await platform.invokeMethod('pictureTaken');
+      // Update last picture date and notify widget
+      final storyService = Provider.of<StoryService>(context, listen: false);
+      await storyService.updateLastPictureDate();
 
       // Switch back to back camera
       setState(() {
-        _isFrontCameraActive = false;
         _isProcessing = false;
         _processingMessage = '';
       });
-
-      // Wait longer for camera to switch back
-      await Future.delayed(const Duration(seconds: 1));
+      await _switchCamera(false);
 
       // Show preview dialog with both images
       final bool? proceed = await _showPreviewDialog(frontImage, backImage);
@@ -222,6 +194,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         );
 
         if (!mounted) return;
+        
+        // Dispose camera before navigating
+        await _disposeCamera();
+        
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -234,7 +210,6 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       print('Error during BeReal capture: $e');
       if (!mounted) return;
       setState(() {
-        _isFrontCameraActive = false;
         _isProcessing = false;
         _processingMessage = '';
       });
@@ -251,6 +226,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeCamera();
+    _promptController.dispose();
+    super.dispose();
   }
 
   Future<bool> _showPreviewDialog(XFile frontImage, XFile backImage) async {
@@ -366,7 +349,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    if (!_isInitialized) {
+    if (!_isInitialized || _cameraController == null || !_cameraController!.value.isInitialized) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
@@ -380,11 +363,45 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           // Camera preview
           Positioned.fill(
             child: AspectRatio(
-              aspectRatio: _isFrontCameraActive 
-                ? _frontController!.value.aspectRatio 
-                : _backController!.value.aspectRatio,
-              child: CameraPreview(
-                _isFrontCameraActive ? _frontController! : _backController!
+              aspectRatio: _cameraController!.value.aspectRatio,
+              child: CameraPreview(_cameraController!),
+            ),
+          ),
+
+          // Style selector
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<ComicStyle>(
+                  value: _selectedStyle,
+                  dropdownColor: Colors.black.withOpacity(0.8),
+                  icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+                  style: const TextStyle(color: Colors.white),
+                  items: ComicStyle.values.map((style) {
+                    return DropdownMenuItem(
+                      value: style,
+                      child: Text(
+                        style.toString().split('.').last,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _selectedStyle = value;
+                      });
+                    }
+                  },
+                ),
               ),
             ),
           ),
@@ -437,7 +454,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               children: [
                 // BeReal button
                 FloatingActionButton(
-                  onPressed: _isCapturing ? null : _handleBeRealCapture,
+                  onPressed: _isCapturing || !_isInitialized || _cameraController == null || !_cameraController!.value.isInitialized 
+                    ? null 
+                    : _handleBeRealCapture,
                   backgroundColor: _isCapturing ? Colors.grey : Colors.blue,
                   child: const Icon(Icons.camera_alt),
                 ),

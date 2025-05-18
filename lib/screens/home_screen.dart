@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'story_detail_screen.dart';
 import '../main.dart';
 import 'package:flutter/services.dart';
+import 'dart:convert';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -108,18 +109,33 @@ class HomeScreen extends StatelessWidget {
                       // Story image
                       AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: Image.network(
-                          story.pages.first.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey[200],
-                              child: const Center(
-                                child: Icon(Icons.error_outline, size: 50),
+                        child: story.pages.first.imageUrl.startsWith('data:image')
+                            ? Image.memory(
+                                base64Decode(story.pages.first.imageUrl.split(',')[1]),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('Error loading image: $error');
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: const Center(
+                                      child: Icon(Icons.error_outline, size: 50),
+                                    ),
+                                  );
+                                },
+                              )
+                            : Image.network(
+                                story.pages.first.imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  print('Error loading image: $error');
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: const Center(
+                                      child: Icon(Icons.error_outline, size: 50),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
                       ),
                       // Story details
                       Padding(

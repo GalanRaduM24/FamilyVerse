@@ -35,10 +35,47 @@ class StoryDetailScreen extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   // Background image from first page
-                  Image.network(
-                    story.pages.first.imageUrl,
-                    fit: BoxFit.cover,
-                  ),
+                  story.pages.first.imageUrl.startsWith('data:image')
+                      ? Image.memory(
+                          base64Decode(story.pages.first.imageUrl.split(',')[1]),
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            print('Error loading image: $error');
+                            return Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Icon(Icons.error_outline, size: 50),
+                              ),
+                            );
+                          },
+                        )
+                      : Image.network(
+                          story.pages.first.imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            print('Error loading image: $error');
+                            return Container(
+                              color: Colors.grey[200],
+                              child: const Center(
+                                child: Icon(Icons.error_outline, size: 50),
+                              ),
+                            );
+                          },
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: Colors.grey[200],
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  value: loadingProgress.expectedTotalBytes != null
+                                      ? loadingProgress.cumulativeBytesLoaded /
+                                          loadingProgress.expectedTotalBytes!
+                                      : null,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                   // Gradient overlay
                   Container(
                     decoration: BoxDecoration(

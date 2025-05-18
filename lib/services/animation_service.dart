@@ -6,10 +6,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/story.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
+import 'voiceover_service.dart';
 
 class AnimationService {
-  static const String _baseUrl = 'https://api.stability.ai/v2beta/stable-video';
+  static const String _baseUrl = 'https://api.stability.ai/v2beta';
   final String _apiKey = dotenv.env['STABILITY_API_KEY'] ?? '';
+  final VoiceoverService _voiceoverService = VoiceoverService();
   static const int _maxRetries = 1;
   static const Duration _retryDelay = Duration(seconds: 2);
   static const Duration _pollingInterval = Duration(seconds: 5);
@@ -19,7 +22,23 @@ class AnimationService {
   static const int _targetWidth = 1024;
   static const int _targetHeight = 576;
 
-  Future<String> generateAnimation(Story story) async {
+  Future<Map<String, String>> generateAnimation(Story story) async {
+    // Start voiceover generation in parallel
+    final voiceoverFuture = _voiceoverService.generateVoiceover(story);
+    
+    // Generate animation
+    final videoPath = await _generateAnimationInternal(story);
+    
+    // Wait for voiceover to complete
+    final audioPath = await voiceoverFuture;
+    
+    return {
+      'video': videoPath,
+      'audio': audioPath,
+    };
+  }
+
+  Future<String> _generateAnimationInternal(Story story) async {
     if (_apiKey.isEmpty) {
       throw Exception('Stability AI API key not found. Please add STABILITY_API_KEY to your .env file.');
     }
@@ -91,12 +110,12 @@ class AnimationService {
         // Create a new request for each attempt
         final request = http.MultipartRequest(
           'POST',
-          Uri.parse('$_baseUrl/generate'),
+          Uri.parse('$_baseUrl/image-to-video'),
         );
 
         // Add headers
         request.headers.addAll({
-          'Authorization': 'Bearer $_apiKey',
+          'Authorization': _apiKey,
           'Accept': 'application/json',
         });
 
@@ -118,17 +137,17 @@ class AnimationService {
               'weight': 1.0
             },
             {
-              'text': 'blurry, low quality, distorted, deformed, ugly, bad anatomy',
+              'text': 'blurry, low quality, distorted, deformed, ugly, bad anatomy, static, no movement, frozen',
               'weight': -1.0
             }
           ]),
-          'cfg_scale': '7.5',
-          'motion_bucket_id': '127',
+          'cfg_scale': '10.0',
+          'motion_bucket_id': '255',
           'seed': (DateTime.now().millisecondsSinceEpoch % 1000000).toString(),
           'height': '$_targetHeight',
           'width': '$_targetWidth',
-          'fps': '24',
-          'duration': '4',
+          'fps': '30',
+          'duration': '8',
           'style_preset': _getStyleForStory(story.style.toString().split('.').last),
         });
 
@@ -198,9 +217,8 @@ class AnimationService {
       await Future.delayed(_pollingInterval);
       
       try {
-        // Fixed URL format for status checking - using the correct endpoint
         final statusResponse = await http.get(
-          Uri.parse('$_baseUrl/status/$jobId'),
+          Uri.parse('$_baseUrl/image-to-video/result/$jobId'),
           headers: {
             'Authorization': 'Bearer $_apiKey',
             'Accept': 'application/json',
@@ -210,43 +228,68 @@ class AnimationService {
         print('Status check response: ${statusResponse.statusCode} - ${statusResponse.body}');
 
         if (statusResponse.statusCode == 200) {
-          consecutive404s = 0; // Reset counter on successful response
+          consecutive404s = 0;
           final statusData = jsonDecode(statusResponse.body);
-          print('Status data: $statusData');  // Added more detailed logging
+          print('Status data: $statusData');
           
+          // If we have a video URL, decode and save it
+          if (statusData['video'] != null) {
+            final base64Video = statusData['video'] as String;
+            if (base64Video.isEmpty) {
+              throw Exception('Generated video data is empty');
+            }
+            
+            // Decode base64 and save to temporary file
+            final videoBytes = base64Decode(base64Video);
+            final tempDir = await getTemporaryDirectory();
+            final videoFile = File('${tempDir.path}/animation_${DateTime.now().millisecondsSinceEpoch}.mp4');
+            await videoFile.writeAsBytes(videoBytes);
+            
+            return videoFile.path;
+          }
+          
+          // Otherwise check the status
           switch (statusData['status']) {
             case 'succeeded':
-              videoUrl = statusData['output']['video'];
-              if (videoUrl == null || videoUrl.isEmpty) {
-                throw Exception('Generated video URL is empty');
+              final base64Video = statusData['output']?['video'] as String?;
+              if (base64Video == null || base64Video.isEmpty) {
+                throw Exception('Generated video data is empty');
               }
-              return videoUrl;
+              
+              // Decode base64 and save to temporary file
+              final videoBytes = base64Decode(base64Video);
+              final tempDir = await getTemporaryDirectory();
+              final videoFile = File('${tempDir.path}/animation_${DateTime.now().millisecondsSinceEpoch}.mp4');
+              await videoFile.writeAsBytes(videoBytes);
+              
+              return videoFile.path;
             case 'failed':
               throw Exception('Generation failed: ${statusData['message']}');
             case 'processing':
-              print('Still processing...');  // Added status logging
-              // Continue polling
+            case 'in-progress':
+              print('Still processing...');
               break;
             default:
-              throw Exception('Unknown status: ${statusData['status']}');
+              print('Unknown status: ${statusData['status']}');
+              break;
           }
+        } else if (statusResponse.statusCode == 202) {
+          print('Still processing (202)...');
         } else if (statusResponse.statusCode == 404) {
           consecutive404s++;
           print('Received 404 response. Consecutive 404s: $consecutive404s');
           
           if (consecutive404s >= maxConsecutive404s) {
-            throw Exception('Job not found after $maxConsecutive404s consecutive attempts. The job may have expired or been deleted.');
+            throw Exception('Job not found after $maxConsecutive404s consecutive attempts');
           }
-          // Continue polling with a shorter delay for 404s
           await Future.delayed(const Duration(seconds: 2));
         } else {
           throw Exception('Failed to check status: ${statusResponse.statusCode}');
         }
       } catch (e) {
-        // Log error but continue polling
         print('Error checking status: $e');
         if (e.toString().contains('Job not found')) {
-          throw e; // Re-throw if it's a job not found error
+          throw e;
         }
       }
     }
@@ -313,29 +356,32 @@ class AnimationService {
   String _createAnimationPrompt(Story story) {
     final buffer = StringBuffer();
     
-    // Add story context
-    buffer.writeln('Create a cinematic animation with the following elements:');
+    // Add story context with enhanced motion instructions
+    buffer.writeln('Create a dynamic, cinematic animation with smooth camera movements and transitions:');
     buffer.writeln('Title: ${story.title}');
     if (story.prompt != null) {
       buffer.writeln('Context: ${story.prompt}');
     }
     
-    // Add scene descriptions for each page
+    // Add scene descriptions for each page with motion cues
     for (var page in story.pages) {
       buffer.writeln('\nScene ${page.pageNumber}:');
       if (page.generatedText != null) {
         buffer.writeln('Description: ${page.generatedText}');
+        // Add dynamic motion suggestions
+        buffer.writeln('Add dynamic camera movements, subtle zoom effects, and smooth transitions');
       }
     }
     
-    // Add animation instructions
+    // Add enhanced animation instructions
     buffer.writeln('\nAnimation Requirements:');
-    buffer.writeln('- Create smooth transitions between scenes');
-    buffer.writeln('- Add subtle camera movements to bring static panels to life');
-    buffer.writeln('- Include ambient sounds and background music');
-    buffer.writeln('- Add voice narration with appropriate intonation');
-    buffer.writeln('- Each scene should be 5-7 seconds long');
-    buffer.writeln('- Total duration should be 30 seconds');
+    buffer.writeln('- Create fluid, cinematic camera movements');
+    buffer.writeln('- Add dynamic zoom and pan effects');
+    buffer.writeln('- Include smooth transitions between scenes');
+    buffer.writeln('- Add subtle parallax effects to create depth');
+    buffer.writeln('- Each scene should have multiple camera movements');
+    buffer.writeln('- Total duration should be 8 seconds');
+    buffer.writeln('- Ensure smooth, continuous motion throughout');
     
     return buffer.toString();
   }

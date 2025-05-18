@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart';
 import '../services/animation_service.dart';
 import '../models/story.dart';
+import 'dart:io';
 
 class AnimationScreen extends StatefulWidget {
   final Story story;
@@ -14,10 +16,10 @@ class AnimationScreen extends StatefulWidget {
 
 class _AnimationScreenState extends State<AnimationScreen> {
   VideoPlayerController? _controller;
+  AudioPlayer? _audioPlayer;
   bool _isLoading = true;
   String? _error;
-  bool _isGenerating = false;
-  double _progress = 0.0;
+  bool _isInitialized = false;
 
   @override
   void initState() {
@@ -25,189 +27,130 @@ class _AnimationScreenState extends State<AnimationScreen> {
     _generateAnimation();
   }
 
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
   Future<void> _generateAnimation() async {
-    if (_isGenerating) return;
-
-    setState(() {
-      _isGenerating = true;
-      _error = null;
-      _progress = 0.0;
-    });
-
     try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+        _isInitialized = false;
+      });
+
       final animationService = AnimationService();
-      final videoUrl = await animationService.generateAnimation(widget.story);
+      final result = await animationService.generateAnimation(widget.story);
+      
+      // Initialize video player
+      _controller = VideoPlayerController.file(File(result['video']!));
+      
+      // Initialize audio player
+      _audioPlayer = AudioPlayer();
+      await _audioPlayer!.setFilePath(result['audio']!);
+      
+      // Wait for video to initialize
+      await _controller!.initialize();
+      
+      // Add listener to sync audio with video
+      _controller!.addListener(_syncAudioWithVideo);
+      
+      // Start both video and audio together
+      await Future.wait([
+        _controller!.play(),
+        _audioPlayer!.play(),
+      ]);
 
-      if (!mounted) return;
-
-      // Initialize video controller
-      _controller = VideoPlayerController.network(videoUrl)
-        ..addListener(() {
-          if (mounted) setState(() {});
-        })
-        ..setLooping(true)
-        ..initialize().then((_) {
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-              _isGenerating = false;
-            });
-            _controller?.play();
-          }
-        });
+      setState(() {
+        _isLoading = false;
+        _isInitialized = true;
+      });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
-        _isGenerating = false;
       });
     }
+  }
+
+  void _syncAudioWithVideo() {
+    if (_controller == null || _audioPlayer == null) return;
+    
+    // Sync audio position with video
+    final videoPosition = _controller!.value.position;
+    final audioPosition = _audioPlayer!.position;
+    
+    // If difference is more than 100ms, sync them
+    if ((videoPosition - audioPosition).abs() > const Duration(milliseconds: 100)) {
+      _audioPlayer!.seek(videoPosition);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_syncAudioWithVideo);
+    _controller?.dispose();
+    _audioPlayer?.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Story Animation'),
-        actions: [
-          if (!_isGenerating)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _generateAnimation,
-              tooltip: 'Regenerate Animation',
-            ),
-        ],
+        title: const Text('Animation Preview'),
       ),
       body: Center(
-        child: _buildContent(),
+        child: _isLoading
+            ? const CircularProgressIndicator()
+            : _error != null
+                ? Text('Error: $_error')
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: VideoPlayer(_controller!),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              _controller!.value.isPlaying
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                            ),
+                            onPressed: () async {
+                              setState(() {});
+                              if (_controller!.value.isPlaying) {
+                                await Future.wait([
+                                  _controller!.pause(),
+                                  _audioPlayer!.pause(),
+                                ]);
+                              } else {
+                                await Future.wait([
+                                  _controller!.play(),
+                                  _audioPlayer!.play(),
+                                ]);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.replay),
+                            onPressed: () async {
+                              await Future.wait([
+                                _controller!.seekTo(Duration.zero),
+                                _audioPlayer!.seek(Duration.zero),
+                              ]);
+                              await Future.wait([
+                                _controller!.play(),
+                                _audioPlayer!.play(),
+                              ]);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
       ),
     );
-  }
-
-  Widget _buildContent() {
-    if (_isGenerating) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          Text(
-            'Generating animation...\nThis may take a few minutes.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge,
-          ),
-          if (_progress > 0)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: LinearProgressIndicator(value: _progress),
-            ),
-        ],
-      );
-    }
-
-    if (_error != null) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.error_outline,
-            color: Colors.red,
-            size: 48,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Error: $_error',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Colors.red,
-                ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _generateAnimation,
-            child: const Text('Try Again'),
-          ),
-        ],
-      );
-    }
-
-    if (_isLoading) {
-      return const CircularProgressIndicator();
-    }
-
-    if (_controller == null || !_controller!.value.isInitialized) {
-      return const Text('Failed to load video');
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        AspectRatio(
-          aspectRatio: _controller!.value.aspectRatio,
-          child: VideoPlayer(_controller!),
-        ),
-        const SizedBox(height: 16),
-        _buildVideoControls(),
-      ],
-    );
-  }
-
-  Widget _buildVideoControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          icon: Icon(
-            _controller?.value.isPlaying ?? false
-                ? Icons.pause
-                : Icons.play_arrow,
-          ),
-          onPressed: () {
-            setState(() {
-              if (_controller?.value.isPlaying ?? false) {
-                _controller?.pause();
-              } else {
-                _controller?.play();
-              }
-            });
-          },
-        ),
-        ValueListenableBuilder(
-          valueListenable: _controller!,
-          builder: (context, VideoPlayerValue value, child) {
-            return Expanded(
-              child: Slider(
-                value: value.position.inMilliseconds.toDouble(),
-                min: 0,
-                max: value.duration.inMilliseconds.toDouble(),
-                onChanged: (newValue) {
-                  _controller?.seekTo(
-                    Duration(milliseconds: newValue.toInt()),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-        Text(
-          '${_formatDuration(_controller?.value.position ?? Duration.zero)} / '
-          '${_formatDuration(_controller?.value.duration ?? Duration.zero)}',
-        ),
-      ],
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$minutes:$seconds';
   }
 } 
