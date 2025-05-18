@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="90dp"
+    android:viewportWidth="180"
+    android:viewportHeight="90">
+    
+    <!-- Background -->
+    <path
+        android:fillColor="#F5F5F5"
+        android:pathData="M0,0h180v90h-180z"/>
+    
+    <!-- Roads -->
+    <path
+        android:strokeColor="#E0E0E0"
+        android:strokeWidth="2"
+        android:pathData="M0,30h180M0,60h180M60,0v90M120,0v90"/>
+    
+    <!-- Buildings -->
+    <path
+        android:fillColor="#BDBDBD"
+        android:pathData="M20,20h20v20h-20z"/>
+    <path
+        android:fillColor="#BDBDBD"
+        android:pathData="M50,50h20v20h-20z"/>
+    <path
+        android:fillColor="#BDBDBD"
+        android:pathData="M80,30h20v20h-20z"/>
+    <path
+        android:fillColor="#BDBDBD"
+        android:pathData="M110,50h20v20h-20z"/>
+    <path
+        android:fillColor="#BDBDBD"
+        android:pathData="M140,20h20v20h-20z"/>
+    
+    <!-- Location Pins -->
+    <path
+        android:fillColor="#FF5252"
+        android:pathData="M45,45m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"/>
+    <path
+        android:fillColor="#FF5252"
+        android:pathData="M90,30m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"/>
+    <path
+        android:fillColor="#FF5252"
+        android:pathData="M135,60m-6,0a6,6 0,1 1,12 0a6,6 0,1 1,-12 0"/>
+</vector> 

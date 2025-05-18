@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="110dp"
+    android:viewportWidth="180"
+    android:viewportHeight="110">
+    
+    <!-- Background -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M0,0h180v110h-180z"/>
+    
+    <!-- Map Preview -->
+    <path
+        android:fillColor="#E8F5E9"
+        android:pathData="M0,0h180v90h-180z"/>
+    
+    <!-- Map Grid Lines -->
+    <path
+        android:strokeColor="#81C784"
+        android:strokeWidth="1"
+        android:pathData="M0,30h180M0,60h180M60,0v90M120,0v90"/>
+    
+    <!-- Story Count Badge -->
+    <path
+        android:fillColor="#80000000"
+        android:pathData="M140,10h30v20h-30z"/>
+    
+    <!-- BeReal Status Bar -->
+    <path
+        android:fillColor="#80000000"
+        android:pathData="M0,90h180v20h-180z"/>
+    
+    <!-- BeReal Icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M10,95h20v10h-20z"/>
+    
+    <!-- BeReal Text -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,95h100v10h-100z"/>
+</vector> 

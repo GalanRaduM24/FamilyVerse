@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="8dp">
+
+    <!-- Featured Memory -->
+    <FrameLayout
+        android:id="@+id/memory_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_above="@+id/memory_info"
+        android:layout_alignParentTop="true">
+
+        <ImageView
+            android:id="@+id/memory_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:contentDescription="Featured Memory" />
+
+        <!-- Memory Title Overlay -->
+        <TextView
+            android:id="@+id/memory_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:background="#80000000"
+            android:padding="8dp"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:text="Family Beach Day" />
+    </FrameLayout>
+
+    <!-- Memory Info -->
+    <LinearLayout
+        android:id="@+id/memory_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/bereal_status"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:background="#80000000">
+
+        <TextView
+            android:id="@+id/memory_date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:text="Shared by Mom • 2 days ago" />
+
+        <TextView
+            android:id="@+id/memory_likes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:drawablePadding="4dp"
+            android:drawableStart="@drawable/ic_favorite"
+            android:text="12 family members loved this" />
+    </LinearLayout>
+
+    <!-- BeReal Status -->
+    <LinearLayout
+        android:id="@+id/bereal_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:visibility="visible">
+
+        <ImageView
+            android:id="@+id/bereal_icon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_bereal"
+            android:contentDescription="BeReal Status" />
+
+        <TextView
+            android:id="@+id/bereal_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:text="Time to BeReal!" />
+    </LinearLayout>
+
+</RelativeLayout> 
